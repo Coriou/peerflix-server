@@ -7,12 +7,27 @@ var fs = require('fs'),
   mkdirp = require('mkdirp'),
   readTorrent = require('read-torrent'),
   engine = require('./engine'),
+  { loadBlockList } = require("./blocklist"),
   homePath = process.env[(process.platform === 'win32') ? 'USERPROFILE' : 'HOME'],
   configPath = path.join(homePath, '.config', 'peerflix-server'),
   configFile = path.join(configPath, 'config.json'),
   storageFile = path.join(configPath, 'torrents.json'),
+  blocklistFile = path.join(configPath, "blocklist.json"),
+  blocklist = [],
   torrents = {},
   options = {};
+
+// Load / generate the blocklist on start-up
+const getBlockList = () => {
+  loadBlockList(blocklistFile)
+    .then(list => {
+      blocklist = JSON.parse(list)
+    })
+    .catch(console.error);
+}
+getBlockList()
+// Periodically reload blocklist
+setInterval(getBlockList, 3.6e6);
 
 function save() {
   mkdirp(configPath, function (err) {
@@ -48,6 +63,9 @@ var store = _.extend(new events.EventEmitter(), {
 
       try {
         var e = engine(torrent, options);
+        blocklist.forEach(ip => {
+          e.block(ip)
+        })
         store.emit('torrent', infoHash, e);
         torrents[infoHash] = e;
         save();
@@ -77,6 +95,9 @@ var store = _.extend(new events.EventEmitter(), {
   load: function (infoHash) {
     console.log('loading ' + infoHash);
     var e = engine({ infoHash: infoHash }, options);
+    blocklist.forEach(ip => {
+      e.block(ip)
+    })
     store.emit('torrent', infoHash, e);
     torrents[infoHash] = e;
   }
